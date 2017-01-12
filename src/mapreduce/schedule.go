@@ -46,10 +46,16 @@ func (mr *Master) schedule(phase jobPhase) {
 					ok := call(wk, "Worker.DoTask", taskArgs, new(struct{}))
 					if ok == false {
 						fmt.Printf("DoTask: RPC %s DoTask error\n", wk)
+						fmt.Printf("Try to re-assign the task to workers\n")
+						go func() {
+							taskArgsChannel <- taskArgs
+						}()
+						break
+					} else {
+						go func(){
+							taskDoneChannel <- 1
+						}()
 					}
-					go func(){
-						taskDoneChannel <- 1
-					}()
 				}
 			}(worker)
 		}

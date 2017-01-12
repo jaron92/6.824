@@ -1,6 +1,14 @@
 package mapreduce
 
-import "fmt"
+import (
+	"fmt"
+	// "time"
+)
+
+
+var taskArgsChannel = make(chan *DoTaskArgs)
+var taskDoneChannel = make(chan int)
+var waitingChannel = make(chan int)
 
 // schedule starts and waits for all tasks in the given phase (Map or Reduce).
 func (mr *Master) schedule(phase jobPhase) {
@@ -23,6 +31,53 @@ func (mr *Master) schedule(phase jobPhase) {
 	// multiple tasks.
 	//
 	// TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
+
+	// time.Sleep(10 * time.Millisecond)
+
+	// handle register message
+	go func() {
+		for worker := range mr.registerChannel {
+			go func(){
+				waitingChannel <- 1
+			}()
+			go func(wk string) {
+				// issue task
+				for taskArgs := range taskArgsChannel {
+					ok := call(wk, "Worker.DoTask", taskArgs, new(struct{}))
+					if ok == false {
+						fmt.Printf("DoTask: RPC %s DoTask error\n", wk)
+					}
+					go func(){
+						taskDoneChannel <- 1
+					}()
+				}
+			}(worker)
+		}
+	}()
+
+	// waiting until any register message arrives
+	if cap(mr.workers) == 0 {
+		<- waitingChannel
+	}
+
+	for i := 0; i < ntasks; i++ {
+		taskArgs := new(DoTaskArgs)
+		taskArgs.JobName = mr.jobName
+		if phase == mapPhase {
+			taskArgs.File = mr.files[i]
+		}
+		taskArgs.Phase = phase
+		taskArgs.TaskNumber = i
+		taskArgs.NumOtherPhase = nios
+		taskArgsChannel <- taskArgs
+	}
+
+	// waiting until all tasks are done
+	for i := 0; i < ntasks; i++ {
+		<- taskDoneChannel
+	}
+
+
 	//
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
